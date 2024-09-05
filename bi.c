@@ -19,14 +19,15 @@
           printf(__VA_ARGS__);          \
           putchar('\n');                \
           exit(-1); }
+#define long int64_t
 
 const char  *p;
 int         tk, no;
-intptr_t    val;
-intptr_t    *e, *le;
-char        *data, *ldata;
-intptr_t    *id, *sym;
-int         loc;
+long        val;
+long        *e, *le;
+long        *data, *ldata;
+long        *id, *sym;
+int         loc, call;
 
 int prefix(const char* s) {
     const char* pp = p;
@@ -46,7 +47,7 @@ enum {
     Div, Mod, Inc, Dec, Brak,
 };
 
-enum { Name, Addr, HName, HAddr, Idsz };
+enum { Name, Addr, IsAuto, HAddr, HIsAuto, Idsz };
 
 void next() {
     while (tk = *p) {
@@ -90,7 +91,7 @@ void next() {
             for (id = sym; id[Name]; id += Idsz) {
                 if (idcmp((const char*)id[Name], pp)) { return; }
             }
-            id[Name] = (intptr_t)pp;
+            id[Name] = (long)pp;
             return;
         }
         else if (isdigit(*p)) {
@@ -118,14 +119,132 @@ void next() {
                     else { error("unknown escape sequence *%c", *p); }
                     if (*++p != '\'' && tk == '\'') { error("bad char literal"); }
                 }
-                if (tk == '"') *data++ = val;
+                if (*p != '\'' && tk == '\'') { error("bad char literal"); }
+                if (tk == '"') { *(*(char**)&data)++ = val; }
             }
             if (*p++ == 0) { error("unexpected EOF"); }
-            if (tk == '"') { val = (intptr_t)pp; }
+            if (tk == '"') { val = (long)pp; }
             else { tk = Num; }
             return;
         }
         else { error("unknown character %c ascii(%d)", *p, *p); }
+    }
+}
+
+void expr(int lev) {
+    if (tk == Num) {
+        *e++ = IMM;
+        *e++ = val;
+        next();
+    }
+    else if (tk == '"') {
+        *e++ = IMM;
+        *e++ = val;
+        next();
+        while (tk == '"') { next(); }
+        data = (long*)
+            ( (long)data 
+            +  sizeof(long) 
+            & -sizeof(long));
+    }
+    else if (tk == Id) {
+        if (!id[Addr]) { error("undefined identifier"); }
+        if (id[IsAuto]) { *e++ = LEA; *e++ = id[Addr]; }
+        else { *e++ = IMM; *e++ = id[Addr]; }
+        *e++ = LI;
+        next();
+    }
+    else if (tk == '(') {
+        expr(Assign);
+        if (tk != ')') { error("')' expected"); }
+        next();
+    }
+}
+
+void stmt() {
+    if (tk == ';') {
+        next();
+    }
+    else if (tk == '{') {
+        next();
+        while (tk && tk != '}') { stmt(); }
+        if (tk == 0) { error("unexpected EOF"); }
+        next();
+    }
+    else if (tk == Extrn) {
+        next();
+        while (tk && tk != ';') {
+            if (tk != Id) { error("bad extrn list"); }
+            // TODO: currently does nothing
+            next();
+            if (tk == ',') { next(); }
+        }
+        if (tk == 0) { error("unexpected EOF"); }
+        next();
+    }
+    else if (tk == Auto) {
+        next();
+        while (tk && tk != ';') {
+            if (tk != Id) { error("bad auto list"); }
+            if (id[IsAuto]) { error("duplicate auto variable"); }
+            id[HAddr]   = id[Addr];   id[Addr]   = --loc;
+            id[HIsAuto] = id[IsAuto]; id[IsAuto] = 1;
+            next();
+            if (tk == Num) {
+                *e++ = LEA;
+                *e++ = id[Addr];
+                *e++ = PSH;
+                *e++ = IMM;
+                *e++ = val;
+                *e++ = SI;
+            }
+            next();
+            if (tk == ',') { next(); }
+        }
+        if (tk == 0) { error("unexpected EOF"); }
+        next();
+    }
+    else if (tk == If) {
+        next();
+        if (tk == '(') { next(); } else { error("'(' expected"); }
+        expr(Assign);
+        if (tk == ')') { next(); } else { error("')' expected"); }
+        *e++ = BZ;
+        long* b = e++;
+        stmt();
+        if (tk == Else) {
+            next();
+            *b = e + 2;
+            *e++ = JMP;
+            b = e++;
+            stmt();
+        }
+        *b = e;
+    }
+    else if (tk == While) {
+        next();
+        if (tk == '(') { next(); } else { error("'(' expected"); }
+        long* s = e;
+        expr(Assign);
+        if (tk == ')') { next(); } else { error("')' expected"); }
+        *e++ = BZ;
+        long* b = e++;
+        stmt();
+        *e++ = JMP;
+        *e++ = s;
+        *b = e;
+    }
+    else if (tk == Return) {
+        next();
+        if (tk != ';') { expr(Assign); }
+        *e++ = LEV;
+        if (tk != ';') { error("';' expected"); }
+        next();
+    }
+    else {
+        expr(Assign);
+        if (tk != ';') { error("';' expected"); }
+        next();
     }
 }
 
@@ -134,8 +253,76 @@ void compile(const char* src) {
     p = src;
     next();
     while (tk) {
-        printf("%c tk(%d) val(%ld)\n", tk, tk, val);
+        if (tk != Id) { error("bad definition"); }
+        long* d = id;
         next();
+        
+        if (tk == ';') {
+            d[Addr] = (long)data;
+            *data++ = 0;
+            next();
+        }
+        else if (tk == Num) {
+            d[Addr] = (long)data;
+            *data++ = val;
+            next();
+            if (tk != ';') { error("';' expected"); }
+            next();
+        }
+        else if (tk == Brak) {
+            next();
+            int size = 0;
+            if (tk == Num) { size = val; next(); }
+            if (tk != ']') { error("']' expected"); }
+            next();
+
+            int i;
+            long* pp = data;
+            d[Addr] = (long)data;
+            for (i = 0; tk && tk != ';'; i++) {
+                if (tk == Num) { *pp++ = val; }
+                else if (tk == Id) {
+                    if (!id[Addr]) { error("undefined identifier\n"); }
+                    *pp++ = id[Addr];
+                }
+                else { error("bad initializer list"); }
+                next();
+                if (tk == ',') { next(); }
+            }
+            if (tk == 0) { error("unexpected EOF"); }
+            data += i > size ? i : size;
+            next();
+        }
+        else if (tk == '(') {
+            next();
+            loc = 2;
+            d[Addr] = (long)e;
+            while (tk && tk != ')') {
+                if (tk != Id) { error("bad parameter list"); }
+                if (id[IsAuto]) { error("duplicate parameter"); }
+                id[HAddr]   = id[Addr];   id[Addr]   = loc++;
+                id[HIsAuto] = id[IsAuto]; id[IsAuto] = 1;
+                next();
+                if (tk == ',') { next(); }
+            }
+            if (tk == 0) { error("unexpected EOF"); }
+            next();
+
+            loc = 0;
+            *e++ = ENT;
+            long* opr = e++;
+            stmt();
+            *opr = -loc;
+            *e++ = LEV;
+
+            for (id = sym; id[Name]; id += Idsz) {
+                if (id[IsAuto]) {
+                    id[Addr]   = id[HAddr];
+                    id[IsAuto] = id[HIsAuto];
+                }
+            }
+        }
+        else { error("bad definition"); }
     }
 }
 
@@ -153,13 +340,13 @@ int main(int argc, char** argv) {
     buf[len] = 0;
     fclose(f);
 
-    e = le = malloc(10 * 1024 * sizeof(intptr_t));
-    data = ldata = malloc(20 * 1024 * sizeof(intptr_t));
-    id = sym = malloc(1024 * Idsz * sizeof(intptr_t));
+    e = le = malloc(10 * 1024 * sizeof(long));
+    data = ldata = malloc(20 * 1024 * sizeof(long));
+    id = sym = malloc(1024 * Idsz * sizeof(long));
 
-    memset(e, 0, 10 * 1024 * sizeof(intptr_t));
-    memset(data, 0, 20 * 1024 * sizeof(intptr_t));
-    memset(sym, 0, 1024 * Idsz * sizeof(intptr_t));
+    memset(e, 0, 10 * 1024 * sizeof(long));
+    memset(data, 0, 20 * 1024 * sizeof(long));
+    memset(sym, 0, 1024 * Idsz * sizeof(long));
 
     compile(buf);
 }
