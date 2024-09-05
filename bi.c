@@ -20,11 +20,11 @@
           putchar('\n');                \
           exit(-1); }
 
-const char  *p, *lp;
+const char  *p;
 int         tk, no;
 intptr_t    val;
 intptr_t    *e, *le;
-char        *data;
+char        *data, *ldata;
 intptr_t    *id, *sym;
 int         loc;
 
@@ -102,6 +102,7 @@ void next() {
             return;
         }
         else if (tk == '\'' || tk == '"') {
+            p++;
             const char* pp = data;
             while (*p != 0 && *p != tk) {
                 if ((val = *p++) == '*') {
@@ -126,4 +127,39 @@ void next() {
         }
         else { error("unknown character %c ascii(%d)", *p, *p); }
     }
+}
+
+void compile(const char* src) {
+    no = 1;
+    p = src;
+    next();
+    while (tk) {
+        printf("%c tk(%d) val(%ld)\n", tk, tk, val);
+        next();
+    }
+}
+
+int main(int argc, char** argv) {
+    if (argc < 2) { printf("usage: bi <source.b>\n"); return -1; }
+    FILE* f = fopen(argv[1], "r");
+    if (f == NULL) { printf("no such file: %s\n", argv[1]); return -1; }
+
+    fseek(f, 0, SEEK_END);
+    int len = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    char* buf = malloc(len+1);
+    fread(buf, 1, len, f);
+    buf[len] = 0;
+    fclose(f);
+
+    e = le = malloc(10 * 1024 * sizeof(intptr_t));
+    data = ldata = malloc(20 * 1024 * sizeof(intptr_t));
+    id = sym = malloc(1024 * Idsz * sizeof(intptr_t));
+
+    memset(e, 0, 10 * 1024 * sizeof(intptr_t));
+    memset(data, 0, 20 * 1024 * sizeof(intptr_t));
+    memset(sym, 0, 1024 * Idsz * sizeof(intptr_t));
+
+    compile(buf);
 }
