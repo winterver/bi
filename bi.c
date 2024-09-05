@@ -24,8 +24,8 @@
 const char  *p;
 int         tk, no;
 long        val;
-long        *e, *le;
-long        *data, *ldata;
+long        *e, *le, *end;
+long        *data;
 long        *id, *sym;
 int         loc;
 
@@ -44,7 +44,7 @@ int idcmp(const char* s1, const char* s2) {
 enum {
     Num = 128, Id, Extrn, Auto, If, Else, While, Switch, Case, Goto, Return,
     Assign, Cond, Or, And, Eq, Ne, Lt, Gt, Le, Ge, Shl, Shr, Add, Sub, Mul,
-    Div, Mod, Inc, Dec, Brak,
+    Div, Mod, Inc, Dec, Brak, _Putchar,
 };
 
 enum { Name, Addr, IsAuto, HAddr, HIsAuto, Idsz };
@@ -52,7 +52,7 @@ enum { Name, Addr, IsAuto, HAddr, HIsAuto, Idsz };
 enum {
     NOP = 0, IMM, LEA, LOAD, STO, PSH, ADD, SUB, MUL, DIV, MOD, AND, OR,
     EQ, NE, LT, GT, LE, GE, SHL, SHR, NOT, NEG, FINC, FDEC, BINC, BDEC,
-    BZ, JMP, ENT, LEV, ADJ,
+    BZ, JMP, ENT, LEV, JSR, _PUTCHAR,
 };
 
 void next() {
@@ -93,6 +93,7 @@ void next() {
             else if (idcmp("case", pp)) { tk = Case; return; }
             else if (idcmp("goto", pp)) { tk = Goto; return; }
             else if (idcmp("return", pp)) { tk = Return; return; }
+            else if (idcmp("_putchar", pp)) { tk = _Putchar; return; }
             tk = Id;
             for (id = sym; id[Name]; id += Idsz) {
                 if (idcmp((const char*)id[Name], pp)) { return; }
@@ -143,8 +144,8 @@ void expr(int lev) {
     else if (tk == Sub) { next(); expr(Inc); *e++ = NEG; }
     else if (tk == Mul) { next(); expr(Inc); *e++ = LOAD; }
     else if (tk == And) { next(); expr(Inc); if (*--e != LOAD) { error("bad address-of"); } }
-    else if (tk == Inc) { next(); expr(Inc); if (*--e != LOAD) { error("bad lvalue in increment"); } *e = FINC; }
-    else if (tk == Dec) { next(); expr(Inc); if (*--e != LOAD) { error("bad lvalue in decrement"); } *e = FDEC; }
+    else if (tk == Inc) { next(); expr(Inc); if (*--e != LOAD) { error("bad lvalue in increment"); } *e++ = FINC; }
+    else if (tk == Dec) { next(); expr(Inc); if (*--e != LOAD) { error("bad lvalue in decrement"); } *e++ = FDEC; }
     else if (tk == '(') { next(); expr(Assign); if (tk != ')') { error("')' expected"); } next(); }
     else if (tk == '"') {
         *e++ = IMM;
@@ -167,7 +168,8 @@ void expr(int lev) {
 
     while (tk >= lev || tk == '(') {
         if (tk == Assign) {
-            next(); if (*--e != LOAD) { error("bad lvalue in decrement"); }
+            next();
+            if (*--e != LOAD) { error("bad lvalue in decrement"); }
             *e++ = PSH; expr(Assign); *e++ = STO;
         }
         else if (tk == Cond) {
@@ -193,8 +195,8 @@ void expr(int lev) {
         else if (tk == Mul) { next(); *e++ = PSH; expr(Inc); *e++ = MUL; }
         else if (tk == Div) { next(); *e++ = PSH; expr(Inc); *e++ = DIV; }
         else if (tk == Mod) { next(); *e++ = PSH; expr(Inc); *e++ = MOD; }
-        else if (tk == Inc) { next(); if (*--e != LOAD) { error("bad lvalue in increment"); } *e = BINC; }
-        else if (tk == Dec) { next(); if (*--e != LOAD) { error("bad lvalue in decrement"); } *e = BDEC; }
+        else if (tk == Inc) { next(); if (*--e != LOAD) { error("bad lvalue in increment"); } *e++ = BINC; }
+        else if (tk == Dec) { next(); if (*--e != LOAD) { error("bad lvalue in decrement"); } *e++ = BDEC; }
         else if (tk == Brak) {
             next();
             if (*--e != LOAD) { error("bad lvalue in subscription"); }
@@ -203,8 +205,32 @@ void expr(int lev) {
             next();
         }
         else if (tk == '(') {
+            if (*--e != LOAD) { error("bad lvalue in function call"); }
+            *e++ = PSH;
             next();
-            error("function call not implemented");
+            long* be = e;
+            long* bend = end;
+            int t;
+            for (t = 0; tk && tk != ')'; t++) {
+                expr(Assign);
+                *e++ = PSH;
+
+                end -= e - be;
+                if (end < e) { error("text segment too short"); }
+                memcpy(end, be, (e - be) * sizeof(long));
+                e = be;
+
+                if (tk == ',') { next(); }
+            }
+            memcpy(e, end, (bend - end) * sizeof(long));
+            e += bend - end;
+            end = bend;
+            next();
+            //if (d->kind == Sys) { *e8++ = SYS; *e16++ = d->val; }
+            //else if (d->kind == Fun) { *e8++ = JSR; *e32++ = d->val; }
+            //else { error("bad function call"); }
+            //if (t) { *e++ = ADJ; *e++ = t; }
+            *e++ = JSR; *e++ = t;
         }
         else { error("bad expression"); }
     }
@@ -235,7 +261,7 @@ void stmt() {
         next();
         while (tk && tk != ';') {
             if (tk != Id) { error("bad auto list"); }
-            if (id[IsAuto]) { error("duplicate auto variable"); }
+            if (id[IsAuto]) { error("duplicate variable"); }
             id[HAddr]   = id[Addr];   id[Addr]   = --loc;
             id[HIsAuto] = id[IsAuto]; id[IsAuto] = 1;
             next();
@@ -289,6 +315,13 @@ void stmt() {
         if (tk != ';') { error("';' expected"); }
         next();
     }
+    else if (tk == _Putchar) {
+        next();
+        expr(Assign);
+        *e++ = _PUTCHAR;
+        if (tk != ';') { error("';' expected"); }
+        next();
+    }
     else {
         expr(Assign);
         if (tk != ';') { error("';' expected"); }
@@ -302,6 +335,7 @@ void compile(const char* src) {
     next();
     while (tk) {
         if (tk != Id) { error("bad definition"); }
+        if (id[Addr]) { error("duplicate declaration"); }
         long* d = id;
         next();
         
@@ -389,12 +423,56 @@ int main(int argc, char** argv) {
     fclose(f);
 
     e = le = malloc(10 * 1024 * sizeof(long));
-    data = ldata = malloc(20 * 1024 * sizeof(long));
+    data = malloc(20 * 1024 * sizeof(long));
     id = sym = malloc(1024 * Idsz * sizeof(long));
+    end = e + 10 * 1024;
 
     memset(e, 0, 10 * 1024 * sizeof(long));
     memset(data, 0, 20 * 1024 * sizeof(long));
     memset(sym, 0, 1024 * Idsz * sizeof(long));
 
+    compile("putchar(n) _putchar n;");
     compile(buf);
+
+    for (long* op = le; *op; op++) {
+        /*IMM, LEA, LOAD, STO, PSH, ADD, SUB, MUL, DIV, MOD, AND, OR,
+        EQ, NE, LT, GT, LE, GE, SHL, SHR, NOT, NEG, FINC, FDEC, BINC, BDEC,
+        BZ, JMP, ENT, LEV, JSR, _PUTCHAR,*/
+        printf("%p: ", op);
+        switch (*op) {
+        case IMM: printf("IMM %p\n", *++op); break;
+        case LEA: printf("LEA %ld\n", *++op); break;
+        case LOAD: printf("LOAD\n"); break;
+        case STO: printf("STO\n"); break;
+        case PSH: printf("PSH\n"); break;
+        case ADD: printf("ADD\n"); break;
+        case SUB: printf("SUB\n"); break;
+        case MUL: printf("MUL\n"); break;
+        case DIV: printf("DIV\n"); break;
+        case MOD: printf("MOD\n"); break;
+        case AND: printf("AND\n"); break;
+        case OR: printf("OR\n"); break;
+        case EQ: printf("EQ\n"); break;
+        case NE: printf("NE\n"); break;
+        case LT: printf("LT\n"); break;
+        case GT: printf("GT\n"); break;
+        case LE: printf("LE\n"); break;
+        case GE: printf("GE\n"); break;
+        case SHL: printf("SHL\n"); break;
+        case SHR: printf("SHR\n"); break;
+        case NOT: printf("NOT\n"); break;
+        case NEG: printf("NEG\n"); break;
+        case FINC: printf("FINC\n"); break;
+        case FDEC: printf("FDEC\n"); break;
+        case BINC: printf("BINC\n"); break;
+        case BDEC: printf("BDEC\n"); break;
+        case BZ: printf("BZ %p\n", *++op); break;
+        case JMP: printf("JMP %p\n", *++op); break;
+        case ENT: printf("ENT %ld\n", *++op); break;
+        case LEV: printf("LEV\n"); break;
+        case JSR: printf("JSR %ld\n", *++op); break;
+        case _PUTCHAR: printf("_PUTCHAR\n"); break;
+        default: printf("unknown opcode\n"); break;
+        }
+    }
 }

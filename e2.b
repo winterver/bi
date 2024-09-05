@@ -8,9 +8,6 @@
 v[2000];
 n 2000;
 
-putchar(n) {
-}
-
 main() {
     extrn putchar, n, v;
     auto i, c, col, a;
@@ -31,5 +28,5 @@ main() {
         if(!(++col % 5))
             putchar(col % 50 ? ' ' : '*n');
     }
-    putchar('*n*n');
+    putchar('*n');
 }
