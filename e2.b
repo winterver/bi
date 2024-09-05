@@ -5,6 +5,11 @@
      1/2! + 1/3! + ... = .111....
    where the bases of the digits are 2, 3, 4, . . . */
 
+v[2000];
+n 2000;
+
+putchar(n) {
+}
 
 main() {
     extrn putchar, n, v;
@@ -17,9 +22,9 @@ main() {
         a = n + 1;
         c = i = 0;
         while (i < n) {
-            c =+ v[i] * 10;
+            c = c + v[i] * 10;
             v[i++] = c % a;
-            c =/ a--;
+            c = c / a--;
         }
 
         putchar(c + '0');
@@ -28,5 +33,3 @@ main() {
     }
     putchar('*n*n');
 }
-v[2000];
-n 2000;

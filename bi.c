@@ -27,7 +27,7 @@ long        val;
 long        *e, *le;
 long        *data, *ldata;
 long        *id, *sym;
-int         loc, call;
+int         loc;
 
 int prefix(const char* s) {
     const char* pp = p;
@@ -48,6 +48,12 @@ enum {
 };
 
 enum { Name, Addr, IsAuto, HAddr, HIsAuto, Idsz };
+
+enum {
+    NOP = 0, IMM, LEA, LOAD, STO, PSH, ADD, SUB, MUL, DIV, MOD, AND, OR,
+    EQ, NE, LT, GT, LE, GE, SHL, SHR, NOT, NEG, FINC, FDEC, BINC, BDEC,
+    BZ, JMP, ENT, LEV, ADJ,
+};
 
 void next() {
     while (tk = *p) {
@@ -104,7 +110,7 @@ void next() {
         }
         else if (tk == '\'' || tk == '"') {
             p++;
-            const char* pp = data;
+            const char* pp = (char*)data;
             while (*p != 0 && *p != tk) {
                 if ((val = *p++) == '*') {
                     if (*p == '0') { val = '\0'; }
@@ -132,11 +138,14 @@ void next() {
 }
 
 void expr(int lev) {
-    if (tk == Num) {
-        *e++ = IMM;
-        *e++ = val;
-        next();
-    }
+    if (tk == Num) { *e++ = IMM; *e++ = val; next(); }  
+    else if (tk == '!') { next(); expr(Inc); *e++ = NOT; }
+    else if (tk == Sub) { next(); expr(Inc); *e++ = NEG; }
+    else if (tk == Mul) { next(); expr(Inc); *e++ = LOAD; }
+    else if (tk == And) { next(); expr(Inc); if (*--e != LOAD) { error("bad address-of"); } }
+    else if (tk == Inc) { next(); expr(Inc); if (*--e != LOAD) { error("bad lvalue in increment"); } *e = FINC; }
+    else if (tk == Dec) { next(); expr(Inc); if (*--e != LOAD) { error("bad lvalue in decrement"); } *e = FDEC; }
+    else if (tk == '(') { next(); expr(Assign); if (tk != ')') { error("')' expected"); } next(); }
     else if (tk == '"') {
         *e++ = IMM;
         *e++ = val;
@@ -151,13 +160,53 @@ void expr(int lev) {
         if (!id[Addr]) { error("undefined identifier"); }
         if (id[IsAuto]) { *e++ = LEA; *e++ = id[Addr]; }
         else { *e++ = IMM; *e++ = id[Addr]; }
-        *e++ = LI;
+        *e++ = LOAD;
         next();
     }
-    else if (tk == '(') {
-        expr(Assign);
-        if (tk != ')') { error("')' expected"); }
-        next();
+    else { error("bad expression"); }
+
+    while (tk >= lev || tk == '(') {
+        if (tk == Assign) {
+            next(); if (*--e != LOAD) { error("bad lvalue in decrement"); }
+            *e++ = PSH; expr(Assign); *e++ = STO;
+        }
+        else if (tk == Cond) {
+            next();
+            *e++ = BZ; long* d = e++; expr(Assign);
+            if (tk != ':') { error("bad conditional expression"); }
+            next();
+            *d = (long)(e + 2); *e++ = JMP;
+            d = e++; expr(Cond); *d = (long)e;
+        }
+        else if (tk == Or) { next(); *e++ = PSH; expr(And); *e++ = OR; }
+        else if (tk == And) { next(); *e++ = PSH; expr(Eq); *e++ = AND; }
+        else if (tk == Eq) { next(); *e++ = PSH; expr(Lt); *e++ = EQ; }
+        else if (tk == Ne) { next(); *e++ = PSH; expr(Lt); *e++ = NE; }
+        else if (tk == Lt) { next(); *e++ = PSH; expr(Shl); *e++ = LT; }
+        else if (tk == Gt) { next(); *e++ = PSH; expr(Shl); *e++ = GT; }
+        else if (tk == Le) { next(); *e++ = PSH; expr(Shl); *e++ = LE; }
+        else if (tk == Ge) { next(); *e++ = PSH; expr(Shl); *e++ = GE; }
+        else if (tk == Shl) { next(); *e++ = PSH; expr(Add); *e++ = SHL; }
+        else if (tk == Shr) { next(); *e++ = PSH; expr(Add); *e++ = SHR; }
+        else if (tk == Add) { next(); *e++ = PSH; expr(Mul); *e++ = ADD; }
+        else if (tk == Sub) { next(); *e++ = PSH; expr(Mul); *e++ = SUB; }
+        else if (tk == Mul) { next(); *e++ = PSH; expr(Inc); *e++ = MUL; }
+        else if (tk == Div) { next(); *e++ = PSH; expr(Inc); *e++ = DIV; }
+        else if (tk == Mod) { next(); *e++ = PSH; expr(Inc); *e++ = MOD; }
+        else if (tk == Inc) { next(); if (*--e != LOAD) { error("bad lvalue in increment"); } *e = BINC; }
+        else if (tk == Dec) { next(); if (*--e != LOAD) { error("bad lvalue in decrement"); } *e = BDEC; }
+        else if (tk == Brak) {
+            next();
+            if (*--e != LOAD) { error("bad lvalue in subscription"); }
+            *e++ = PSH; expr(Assign); *e++ = ADD; *e++ = LOAD;
+            if (tk != ']') { error("']' expected"); }
+            next();
+        }
+        else if (tk == '(') {
+            next();
+            error("function call not implemented");
+        }
+        else { error("bad expression"); }
     }
 }
 
@@ -196,9 +245,8 @@ void stmt() {
                 *e++ = PSH;
                 *e++ = IMM;
                 *e++ = val;
-                *e++ = SI;
+                *e++ = STO;
             }
-            next();
             if (tk == ',') { next(); }
         }
         if (tk == 0) { error("unexpected EOF"); }
@@ -214,12 +262,12 @@ void stmt() {
         stmt();
         if (tk == Else) {
             next();
-            *b = e + 2;
+            *b = (long)(e + 2);
             *e++ = JMP;
             b = e++;
             stmt();
         }
-        *b = e;
+        *b = (long)e;
     }
     else if (tk == While) {
         next();
@@ -231,8 +279,8 @@ void stmt() {
         long* b = e++;
         stmt();
         *e++ = JMP;
-        *e++ = s;
-        *b = e;
+        *e++ = (long)s;
+        *b = (long)e;
     }
     else if (tk == Return) {
         next();
@@ -310,9 +358,9 @@ void compile(const char* src) {
 
             loc = 0;
             *e++ = ENT;
-            long* opr = e++;
+            long* b = e++;
             stmt();
-            *opr = -loc;
+            *b = -loc;
             *e++ = LEV;
 
             for (id = sym; id[Name]; id += Idsz) {
