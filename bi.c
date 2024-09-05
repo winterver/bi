@@ -21,8 +21,10 @@
           exit(-1); }
 
 const char  *p, *lp;
-int         tk, val, no;
+int         tk, no;
+intptr_t    val;
 intptr_t    *e, *le;
+char        *data;
 intptr_t    *id, *sym;
 int         loc;
 
@@ -39,9 +41,9 @@ int idcmp(const char* s1, const char* s2) {
 }
 
 enum {
-    Num = 128, Id, If, Else, While, Switch, Case, Goto, Return,
-    Assign, Cond, Or, And, Eq, Ne, Lt, Gt, Le, Ge, Shl, Shr,
-    Add, Sub, Mul, Div, Mod, Inc, Dec, Brak,
+    Num = 128, Id, Extrn, Auto, If, Else, While, Switch, Case, Goto, Return,
+    Assign, Cond, Or, And, Eq, Ne, Lt, Gt, Le, Ge, Shl, Shr, Add, Sub, Mul,
+    Div, Mod, Inc, Dec, Brak,
 };
 
 enum { Name, Addr, HName, HAddr, Idsz };
@@ -75,7 +77,9 @@ void next() {
         else if (isalpha(*p)) {
             const char* pp = p;
             while (isalnum(*p)) { p++; }
-            if (idcmp("if", pp)) { tk = If; return; }
+            if (idcmp("extrn", pp)) { tk = Extrn; return; }
+            else if (idcmp("auto", pp)) { tk = Auto; return; }
+            else if (idcmp("if", pp)) { tk = If; return; }
             else if (idcmp("else", pp)) { tk = Else; return; }
             else if (idcmp("while", pp)) { tk = While; return; }
             else if (idcmp("switch", pp)) { tk = Switch; return; }
@@ -84,9 +88,9 @@ void next() {
             else if (idcmp("return", pp)) { tk = Return; return; }
             tk = Id;
             for (id = sym; id[Name]; id += Idsz) {
-                if (idcmp(id[Name], pp)) { return; }
+                if (idcmp((const char*)id[Name], pp)) { return; }
             }
-            id[Name] = pp;
+            id[Name] = (intptr_t)pp;
             return;
         }
         else if (isdigit(*p)) {
@@ -115,8 +119,8 @@ void next() {
                 }
                 if (tk == '"') *data++ = val;
             }
-            p++;
-            if (tk == '"') { val = pp; }
+            if (*p++ == 0) { error("unexpected EOF"); }
+            if (tk == '"') { val = (intptr_t)pp; }
             else { tk = Num; }
             return;
         }
