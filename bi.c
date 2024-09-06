@@ -52,7 +52,7 @@ enum { Name, Addr, IsAuto, HAddr, HIsAuto, Idsz };
 enum {
     NOP = 0, IMM, LEA, LOAD, STO, PSH, ADD, SUB, MUL, DIV, MOD, AND, OR,
     EQ, NE, LT, GT, LE, GE, SHL, SHR, NOT, NEG, FINC, FDEC, BINC, BDEC,
-    BZ, JMP, ENT, LEV, JSR, _PUTCHAR,
+    BZ, JMP, ENT, LEV, JSR, ADJ, _PUTCHAR, _EXIT,
 };
 
 void next() {
@@ -200,7 +200,14 @@ void expr(int lev) {
         else if (tk == Brak) {
             next();
             if (*--e != LOAD) { error("bad lvalue in subscription"); }
-            *e++ = PSH; expr(Assign); *e++ = ADD; *e++ = LOAD;
+            *e++ = PSH;
+            expr(Assign);
+            *e++ = PSH;
+            *e++ = IMM;
+            *e++ = sizeof(long);
+            *e++ = MUL;
+            *e++ = ADD;
+            *e++ = LOAD;
             if (tk != ']') { error("']' expected"); }
             next();
         }
@@ -230,7 +237,8 @@ void expr(int lev) {
             //else if (d->kind == Fun) { *e8++ = JSR; *e32++ = d->val; }
             //else { error("bad function call"); }
             //if (t) { *e++ = ADJ; *e++ = t; }
-            *e++ = JSR; *e++ = t;
+            *e++ = JSR; *e++ = t + 1; // num of arguments + 1 (a function
+            *e++ = ADJ; *e++ = t + 1; // pointer is pushed before arguments)
         }
         else { error("bad expression"); }
     }
@@ -434,10 +442,24 @@ int main(int argc, char** argv) {
     compile("putchar(n) _putchar n;");
     compile(buf);
 
+    long* stack = malloc(1024 * sizeof(long));
+    long ax, *pc, *sp, *bp;
+    bp = sp = stack + 1024;
+    ax = 0;
+
+    p = "main"; next();
+    pc = (long*)id[Addr];
+    if (!pc) { error("main() not defined"); }
+
+    *--sp = e;
+    *e++ = _EXIT;
+
+    free(sym);
+
     for (long* op = le; *op; op++) {
-        /*IMM, LEA, LOAD, STO, PSH, ADD, SUB, MUL, DIV, MOD, AND, OR,
-        EQ, NE, LT, GT, LE, GE, SHL, SHR, NOT, NEG, FINC, FDEC, BINC, BDEC,
-        BZ, JMP, ENT, LEV, JSR, _PUTCHAR,*/
+        //IMM, LEA, LOAD, STO, PSH, ADD, SUB, MUL, DIV, MOD, AND, OR,
+        //EQ, NE, LT, GT, LE, GE, SHL, SHR, NOT, NEG, FINC, FDEC, BINC, BDEC,
+        //BZ, JMP, ENT, LEV, JSR, _PUTCHAR,
         printf("%p: ", op);
         switch (*op) {
         case IMM: printf("IMM %p\n", *++op); break;
@@ -471,8 +493,60 @@ int main(int argc, char** argv) {
         case ENT: printf("ENT %ld\n", *++op); break;
         case LEV: printf("LEV\n"); break;
         case JSR: printf("JSR %ld\n", *++op); break;
+        case ADJ: printf("ADJ %ld\n", *++op); break;
         case _PUTCHAR: printf("_PUTCHAR\n"); break;
+        case _EXIT: printf("_EXIT\n"); break;
         default: printf("unknown opcode\n"); break;
         }
     }
+    printf("\n");
+
+#define printf(...)
+
+    int running = 1;
+    while (running) {
+        /*IMM, LEA, LOAD, STO, PSH, ADD, SUB, MUL, DIV, MOD, AND, OR,
+        EQ, NE, LT, GT, LE, GE, SHL, SHR, NOT, NEG, FINC, FDEC, BINC, BDEC,
+        BZ, JMP, ENT, LEV, JSR, _PUTCHAR,*/
+        printf("%p: ", pc);
+        switch (*pc++) {
+        case IMM: printf("IMM %p\n", *pc);  ax = *pc++;           break;
+        case LEA: printf("LEA %ld\n", *pc); ax = *pc++ + bp;      break;
+        case LOAD: printf("LOAD\n");        ax = *(long*)ax;      break;
+        case STO: printf("STO\n");          *(long*)(*sp++) = ax; break;
+        case PSH: printf("PSH\n");          *--sp = ax;           break;
+        case ADD: printf("ADD\n");          ax = *sp++ +  ax;     break;
+        case SUB: printf("SUB\n");          ax = *sp++ -  ax;     break;
+        case MUL: printf("MUL\n");          ax = *sp++ *  ax;     break;
+        case DIV: printf("DIV\n");          ax = *sp++ /  ax;     break;
+        case MOD: printf("MOD\n");          ax = *sp++ %  ax;     break;
+        case AND: printf("AND\n");          ax = *sp++ &  ax;     break;
+        case OR: printf("OR\n");            ax = *sp++ |  ax;     break;
+        case EQ: printf("EQ\n");            ax = *sp++ == ax;     break;
+        case NE: printf("NE\n");            ax = *sp++ != ax;     break;
+        case LT: printf("LT\n");            ax = *sp++ <  ax;     break;
+        case GT: printf("GT\n");            ax = *sp++ >  ax;     break;
+        case LE: printf("LE\n");            ax = *sp++ <= ax;     break;
+        case GE: printf("GE\n");            ax = *sp++ >= ax;     break;
+        case SHL: printf("SHL\n");          ax = *sp++ << ax;     break;
+        case SHR: printf("SHR\n");          ax = *sp++ >> ax;     break;
+        case NOT: printf("NOT\n");          ax = !ax;             break;
+        case NEG: printf("NEG\n");          ax = -ax;             break;
+        case FINC: printf("FINC\n");        ax = ++(*(long*)ax);  break;
+        case FDEC: printf("FDEC\n");        ax = --(*(long*)ax);  break;
+        case BINC: printf("BINC\n");        ax = (*(long*)ax)++;  break;
+        case BDEC: printf("BDEC\n");        ax = (*(long*)ax)--;  break;
+        case JMP: printf("JMP %p\n", *pc);  pc = (long*)*pc;      break;
+        case BZ: printf("BZ %p\n", *pc);    if(!ax)pc=(long*)*pc; break;
+
+        case ENT: printf("ENT %ld\n", *pc); *--sp=bp;bp=sp;sp-=*pc++; break;
+        case LEV: printf("LEV\n");          sp=bp;bp=*sp++;pc=*sp++;  break;
+        case JSR: printf("JSR %ld\n", *pc); *--sp=pc+1;pc=*(sp+*pc);  break;
+        case ADJ: printf("ADJ %ld\n", *pc); sp+=*pc++;                break;
+
+        case _PUTCHAR: printf("_PUTCHAR\n");putchar(ax);          break;
+        case _EXIT: printf("_EXIT\n");      running = 0;          break;
+        default: printf("unknown opcode\n");                      break;
+        }
+    } 
 }
