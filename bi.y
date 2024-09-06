@@ -16,18 +16,177 @@
          ('A' <= (c) && (c) <= 'Z') ||  \
          ('0' <= (c) && (c) <= '9') ||  \
          ('_' == (c)))
+typedef struct node {
+    enum {
+        N_EMPTY = 1,
+        T_NAME,
+        T_NUM,
+        T_STR,
+
+        N_INDEX,
+        N_CALL,
+        N_POST_INC,
+        N_POST_DEC,
+
+        N_ADDROF,
+        N_DEREF,
+        N_NEGATE,
+        N_PRE_NOT,
+        N_PRE_INC,
+        N_PRE_DEC,
+
+        N_ADD,
+        N_SUB,
+        N_MUL,
+        N_DIV,
+        N_MOD,
+        N_AND,
+        N_OR,
+        N_SHL,
+        N_SHR,
+        N_LT,
+        N_GT,
+        N_LE,
+        N_GE,
+        N_EQ,
+        N_NE,
+        N_ADDA,
+        N_SUBA,
+        N_MULA,
+        N_DIVA,
+        N_MODA,
+        N_ANDA,
+        N_ORA,
+        N_SHLA,
+        N_SHRA,
+
+        N_COND,
+
+        N_AUTO,
+        N_EXTRN,
+        N_NAMECONST,
+        N_NAME,
+
+        N_CASE,
+        N_LABEL,
+        N_IF,
+        N_WHILE,
+        N_SWITCH,
+        N_RETURN,
+        N_GOTO,
+        N_RVALUE,
+        N_STMT,
+        N_PUTCHAR,
+
+        N_VAR,
+        N_ARRAY,
+        N_FUNC,
+        N_IVAL_CONST,
+        N_IVAL_NAME,
+        N_DEFINITION,
+    } type;
+    struct node* next;
+    union {
+        char* t_name;
+        int64_t t_num;
+        char* t_str;
+        struct {
+            struct node* left;
+            struct node* right;
+        } index;
+        struct {
+            struct node* left;
+            struct node* right;
+        } call;
+        struct {
+            struct node* left;
+        } post;
+        struct {
+            struct node* right;
+        } unary;
+        struct {
+            struct node* left;
+            struct node* right;
+        } binary;
+        struct {
+            struct node* cond;
+            struct node* left;
+            struct node* right;
+        } cond;
+        struct {
+            struct node* nameconsts;
+        } auto_;
+        struct {
+            struct node* names;
+        } extrn;
+        struct {
+            char* t_name;
+            struct node* const_;
+        } nameconst;
+        struct {
+            struct node* const_;
+        } case_;
+        struct {
+            char* t_name;
+        } label;
+        struct {
+            struct node* cond;
+            struct node* body;
+            struct node* else_;
+        } if_;
+        struct {
+            struct node* cond;
+            struct node* body;
+        } while_;
+        struct {
+            struct node* cond;
+            struct node* body;
+        } switch_;
+        struct {
+            struct node* expr;
+        } return_;
+        struct {
+            struct node* right;
+        } goto_;
+        struct node* rvalue;
+        struct node* stmt;
+        struct {
+            struct node* right;
+        } _putchar;
+        struct {
+            char* t_name;
+            struct node* const_;
+        } var;
+        struct {
+            char* t_name;
+            struct node* const_;
+            struct node* ivals;
+        } array;
+        struct {
+            char* t_name;
+            struct node* const_;
+        } ival;
+        struct {
+            char* t_name;
+            struct node* params;
+            struct node* stmt;
+        } func;
+        struct node* definition;
+    };
+} node_t;
 %}
 
 %token NAME NUM STR
 %token AUTO EXTRN IF ELSE WHILE
 %token SWITCH CASE GOTO RETURN
-%token EQ NE LT GT LE GE SHL SHR INC DEC
+%token EQ NE LE GE SHL SHR INC DEC
 %token ADDA SUBA MULA DIVA MODA SHLA SHRA ANDA ORA
 %token _PUTCHAR
 
 %union{
     char* sval;
     int64_t ival;
+    node_t* node;
 };
 
 %%
@@ -296,6 +455,7 @@ int main(int argc, char** argv) {
     buf[len] = 0;
     fclose(f);
 
+    yylloc.first_line = 1;
     p = buf;
     yyparse();
 }
