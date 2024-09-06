@@ -50,6 +50,7 @@ typedef struct node {
         N_GE,
         N_EQ,
         N_NE,
+        N_ASSIGN,
         N_ADDA,
         N_SUBA,
         N_MULA,
@@ -96,7 +97,7 @@ typedef struct node {
         } index;
         struct {
             struct node* left;
-            struct node* right;
+            struct node* args;
         } call;
         struct {
             struct node* left;
@@ -174,6 +175,14 @@ typedef struct node {
         struct node* definition;
     };
 } node_t;
+
+node_t* mknode(int type) {
+    node_t* n = malloc(sizeof(node_t));
+    memset(n, 0, sizeof(node_t));
+    n->type = type;
+    return n;
+}
+
 %}
 
 %token NAME NUM STR
@@ -188,6 +197,15 @@ typedef struct node {
     int64_t ival;
     node_t* node;
 };
+
+%type<ival> NUM
+%type<sval> NAME STR
+%type<node> program definitions definition
+%type<node> const ivals ival names
+%type<node> statements statement nameconsts nameconst
+%type<node> rvalue cond or and equ rel shift
+%type<node> add mul post unary post args prime
+%type<ival> unaryop assign
 
 %%
 program: | definitions;
@@ -205,8 +223,8 @@ definition: NAME ';'
           | NAME '(' names ')' statement
           ;
 
-const: NUM
-     | STR
+const: NUM { $$ = mknode(T_NUM); $$->t_num = $1; }
+     | STR { $$ = mknode(T_STR); $$->t_str = $1; }
      ;
 
 ivals: ivals ',' ival
@@ -238,100 +256,154 @@ statement: AUTO nameconsts ';'
          ;
 
 nameconsts: nameconsts ',' nameconst
+            {
+                $$ = $1;
+                node_t* n;
+                for (n = $$; n->next; n = n->next);
+                n->next = $3;
+            }
           | nameconst 
           ;
 
 nameconst: NAME const
+            {
+                $$ = mknode(N_NAMECONST);
+                $$->nameconst.t_name = $1;
+                $$->nameconst.const_ = $2;
+            }
          | NAME
+            {
+                $$ = mknode(N_NAMECONST);
+                $$->nameconst.t_name = $1;
+            }
          ;
 
 statements: statements statement
+            {
+                $$ = $1;
+                node_t* n;
+                for (n = $$; n->next; n = n->next);
+                n->next = $2;
+            }
           | statement
           ;
 
 rvalue: unary assign rvalue
+        { $$ = mknode($2); $$->binary.left = $1; $$->binary.right = $3; }
       | cond
       ;
 
-assign: '='
-      | ADDA
-      | SUBA
-      | MULA
-      | DIVA
-      | MODA
-      | SHLA
-      | SHRA
-      | ANDA
-      | ORA
+assign: '=' { $$ = N_ASSIGN; }
+      | ADDA { $$ = N_ADDA; }
+      | SUBA { $$ = N_SUBA; }
+      | MULA { $$ = N_MULA; }
+      | DIVA { $$ = N_DIVA; }
+      | MODA { $$ = N_MODA; }
+      | SHLA { $$ = N_SHLA; }
+      | SHRA { $$ = N_SHRA; }
+      | ANDA { $$ = N_ANDA; }
+      | ORA { $$ = N_ORA; }
       ;
 
 cond: or '?' rvalue ':' cond
+        {
+            $$ = mknode(N_COND);
+            $$->cond.cond = $1;
+            $$->binary.left = $3;
+            $$->binary.right = $5;
+        }
     | or
     ;
 
 or: or '|' and
+       { $$ = mknode(N_OR); $$->binary.left = $1; $$->binary.right = $3; }
   | and
   ;
 
 and: and '&' equ
+       { $$ = mknode(N_AND); $$->binary.left = $1; $$->binary.right = $3; }
    | equ
    ;
 
 equ: equ EQ rel
+       { $$ = mknode(N_EQ); $$->binary.left = $1; $$->binary.right = $3; }
    | equ NE rel
+       { $$ = mknode(N_NE); $$->binary.left = $1; $$->binary.right = $3; }
    | rel
    ;
 
 rel: rel '<' shift
+       { $$ = mknode(N_LT); $$->binary.left = $1; $$->binary.right = $3; }
    | rel '>' shift
+       { $$ = mknode(N_GT); $$->binary.left = $1; $$->binary.right = $3; }
    | rel LE shift
+       { $$ = mknode(N_LE); $$->binary.left = $1; $$->binary.right = $3; }
    | rel GE shift
+       { $$ = mknode(N_GE); $$->binary.left = $1; $$->binary.right = $3; }
    | shift
    ;
 
 shift: shift SHL add
+       { $$ = mknode(N_SHL); $$->binary.left = $1; $$->binary.right = $3; }
      | shift SHR add
+       { $$ = mknode(N_SHR); $$->binary.left = $1; $$->binary.right = $3; }
      | add
      ;
 
 add: add '+' mul
+       { $$ = mknode(N_ADD); $$->binary.left = $1; $$->binary.right = $3; }
    | add '-' mul
+       { $$ = mknode(N_SUB); $$->binary.left = $1; $$->binary.right = $3; }
    | mul
    ;
 
 mul: mul '*' unary
+       { $$ = mknode(N_MUL); $$->binary.left = $1; $$->binary.right = $3; }
    | mul '/' unary
+       { $$ = mknode(N_DIV); $$->binary.left = $1; $$->binary.right = $3; }
    | mul '%' unary
+       { $$ = mknode(N_MOD); $$->binary.left = $1; $$->binary.right = $3; }
    | unary
    ;
 
-unary: unaryop unary
-     | INC unary
-     | DEC unary
+unary: unaryop unary { $$ = mknode($1); $$->unary.right = $2; }
+     | INC unary { $$ = mknode(N_PRE_INC); $$->unary.right = $2; }
+     | DEC unary { $$ = mknode(N_PRE_DEC); $$->unary.right = $2; }
      | post
      ;
 
-unaryop: '&'
-       | '*'
-       | '-'
-       | '!'
+unaryop: '&' { $$ = N_ADDROF; }
+       | '*' { $$ = N_DEREF; }
+       | '-' { $$ = N_NEGATE; }
+       | '!' { $$ = N_NOT; }
        ;
 
 post: post '[' rvalue ']'
+        { $$ = mknode(N_INDEX); $$->index.left = $1; $$->index.right = $3; }
     | post '(' args ')'
+        { $$ = mknode(N_CALL); $$->call.left = $1; $$->call.args = $3; }
     | post '(' ')'
+        { $$ = mknode(N_CALL); $$->call.left = $1; }
     | post INC
+        { $$ = mknode(N_POST_INC); $$->post.left = $1; }
     | post DEC
+        { $$ = mknode(N_POST_DEC); $$->post.left = $1; }
     | prime
     ;
 
 args: rvalue ',' args
+        {
+            $$ = $3;
+            node_t* n;
+            for (n = $$; n->next; n = n->next);
+            n->next = $1;
+        }
     | rvalue
     ;
 
-prime: '(' rvalue ')'
+prime: '(' rvalue ')' { $$ = $2; }
      | const
-     | NAME
+     | NAME { $$ = mknode(T_NAME); $$->t_name = $1; }
      ;
 
 %%
