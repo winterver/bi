@@ -515,6 +515,7 @@ int main(int argc, char** argv) {
         case LOAD: printf("LOAD\n");        ax = *(long*)ax;      break;
         case STO: printf("STO\n");          *(long*)(*sp++) = ax; break;
         case PSH: printf("PSH\n");          *--sp = ax;           break;
+
         case ADD: printf("ADD\n");          ax = *sp++ +  ax;     break;
         case SUB: printf("SUB\n");          ax = *sp++ -  ax;     break;
         case MUL: printf("MUL\n");          ax = *sp++ *  ax;     break;
@@ -536,17 +537,18 @@ int main(int argc, char** argv) {
         case FDEC: printf("FDEC\n");        ax = --(*(long*)ax);  break;
         case BINC: printf("BINC\n");        ax = (*(long*)ax)++;  break;
         case BDEC: printf("BDEC\n");        ax = (*(long*)ax)--;  break;
-        case JMP: printf("JMP %p\n", *pc);  pc = (long*)*pc;      break;
-        case BZ: printf("BZ %p\n", *pc);    if(!ax)pc=(long*)*pc; break;
+
+        case BZ: printf("BZ %p\n", *pc);   if(!ax){pc=*pc;}else{pc++;}break;
+        case JMP: printf("JMP %p\n", *pc); pc = *pc;                  break;
 
         case ENT: printf("ENT %ld\n", *pc); *--sp=bp;bp=sp;sp-=*pc++; break;
         case LEV: printf("LEV\n");          sp=bp;bp=*sp++;pc=*sp++;  break;
         case JSR: printf("JSR %ld\n", *pc); *--sp=pc+1;pc=*(sp+*pc);  break;
         case ADJ: printf("ADJ %ld\n", *pc); sp+=*pc++;                break;
 
-        case _PUTCHAR: printf("_PUTCHAR\n");putchar(ax);          break;
-        case _EXIT: printf("_EXIT\n");      running = 0;          break;
-        default: printf("unknown opcode\n");                      break;
+        case _EXIT: printf("_EXIT\n");       running = 0;             break;
+        case _PUTCHAR: printf("_PUTCHAR\n"); putchar(ax);             break;
+        default: printf("unknown opcode: %p\n", *(pc-1));             break;
         }
     } 
 }
