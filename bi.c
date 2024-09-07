@@ -19,12 +19,14 @@
           printf(__VA_ARGS__);          \
           putchar('\n');                \
           exit(-1); }
+#define zalloc(size)                    \
+        memset(malloc(size), 0, size)
 #define long int64_t
 
 const char  *p;
 int         tk, no;
 long        val;
-long        *e, *le, *end;
+long        *e, *end;
 long        *data;
 long        *id, *sym;
 int         loc;
@@ -429,121 +431,71 @@ int main(int argc, char** argv) {
     buf[len] = 0;
     fclose(f);
 
-    e = le = malloc(10 * 1024 * sizeof(long));
-    data = malloc(20 * 1024 * sizeof(long));
-    id = sym = malloc(1024 * Idsz * sizeof(long));
-    end = e + 10 * 1024;
+    e    = zalloc(10 * 1024 * sizeof(long));
+    data = zalloc(20 * 1024 * sizeof(long));
+    id   = zalloc(1024 * Idsz * sizeof(long));
 
-    memset(e, 0, 10 * 1024 * sizeof(long));
-    memset(data, 0, 20 * 1024 * sizeof(long));
-    memset(sym, 0, 1024 * Idsz * sizeof(long));
+    end  = e + 10 * 1024;
+    sym  = id;
 
     compile("putchar(n) _putchar n;");
     compile(buf);
 
-    long* stack = malloc(1024 * sizeof(long));
-    long ax, *pc, *sp, *bp;
-    bp = sp = stack + 1024;
-    ax = 0;
-
+    long* pc;
     p = "main"; next();
     pc = (long*)id[Addr];
     if (!pc) { error("main() not defined"); }
-
-    *--sp = e;
-    *e++ = _EXIT;
-
     free(sym);
 
-    /*
-    for (long* op = le; *op; op++) {
-        printf("%p: ", op);
-        switch (*op) {
-        case IMM: printf("IMM %p\n", *++op); break;
-        case LEA: printf("LEA %ld\n", *++op); break;
-        case LOAD: printf("LOAD\n"); break;
-        case STO: printf("STO\n"); break;
-        case PSH: printf("PSH\n"); break;
-        case ADD: printf("ADD\n"); break;
-        case SUB: printf("SUB\n"); break;
-        case MUL: printf("MUL\n"); break;
-        case DIV: printf("DIV\n"); break;
-        case MOD: printf("MOD\n"); break;
-        case AND: printf("AND\n"); break;
-        case OR: printf("OR\n"); break;
-        case EQ: printf("EQ\n"); break;
-        case NE: printf("NE\n"); break;
-        case LT: printf("LT\n"); break;
-        case GT: printf("GT\n"); break;
-        case LE: printf("LE\n"); break;
-        case GE: printf("GE\n"); break;
-        case SHL: printf("SHL\n"); break;
-        case SHR: printf("SHR\n"); break;
-        case NOT: printf("NOT\n"); break;
-        case NEG: printf("NEG\n"); break;
-        case FINC: printf("FINC\n"); break;
-        case FDEC: printf("FDEC\n"); break;
-        case BINC: printf("BINC\n"); break;
-        case BDEC: printf("BDEC\n"); break;
-        case BZ: printf("BZ %p\n", *++op); break;
-        case JMP: printf("JMP %p\n", *++op); break;
-        case ENT: printf("ENT %ld\n", *++op); break;
-        case LEV: printf("LEV\n"); break;
-        case JSR: printf("JSR %ld\n", *++op); break;
-        case ADJ: printf("ADJ %ld\n", *++op); break;
-        case _PUTCHAR: printf("_PUTCHAR\n"); break;
-        case _EXIT: printf("_EXIT\n"); break;
-        default: printf("unknown opcode\n"); break;
-        }
-    }
-    printf("\n");
-    */
+    long ax = 0, *sp, *bp;
+    bp = sp = zalloc(1024 * sizeof(long));
+    bp = sp = sp + 1024;
 
-#define printf(...)
+    *--sp = (long)e;
+    *e++ = _EXIT;
 
     int running = 1;
     while (running) {
-        printf("%p: ", pc);
         switch (*pc++) {
-        case IMM: printf("IMM %p\n", *pc);  ax = *pc++;           break;
-        case LEA: printf("LEA %ld\n", *pc); ax = *pc++ + bp;      break;
-        case LOAD: printf("LOAD\n");        ax = *(long*)ax;      break;
-        case STO: printf("STO\n");          *(long*)(*sp++) = ax; break;
-        case PSH: printf("PSH\n");          *--sp = ax;           break;
+        case IMM:       ax = *pc++;                              break;
+        case LEA:       ax = (long)(bp + *pc++);                 break;
+        case LOAD:      ax = *(long*)ax;                         break;
+        case STO:       *(long*)(*sp++) = ax;                    break;
+        case PSH:       *--sp = ax;                              break;
+                                                                 
+        case ADD:       ax = *sp++ +  ax;                        break;
+        case SUB:       ax = *sp++ -  ax;                        break;
+        case MUL:       ax = *sp++ *  ax;                        break;
+        case DIV:       ax = *sp++ /  ax;                        break;
+        case MOD:       ax = *sp++ %  ax;                        break;
+        case AND:       ax = *sp++ &  ax;                        break;
+        case OR:        ax = *sp++ |  ax;                        break;
+        case EQ:        ax = *sp++ == ax;                        break;
+        case NE:        ax = *sp++ != ax;                        break;
+        case LT:        ax = *sp++ <  ax;                        break;
+        case GT:        ax = *sp++ >  ax;                        break;
+        case LE:        ax = *sp++ <= ax;                        break;
+        case GE:        ax = *sp++ >= ax;                        break;
+        case SHL:       ax = *sp++ << ax;                        break;
+        case SHR:       ax = *sp++ >> ax;                        break;
+        case FINC:      ax = ++(*(long*)ax);                     break;
+        case FDEC:      ax = --(*(long*)ax);                     break;
+        case BINC:      ax = (*(long*)ax)++;                     break;
+        case BDEC:      ax = (*(long*)ax)--;                     break;
+        case NOT:       ax = !ax;                                break;
+        case NEG:       ax = -ax;                                break;
+                                                                 
+        case JMP:       pc = (long*)*pc;                         break;
+        case BZ:        pc = ax ? pc+1 : (long*)*pc;             break;
+                        
+        case ENT:       *--sp=(long)bp;bp=sp;sp-=*pc++;          break;
+        case LEV:       sp=bp;bp=(long*)*sp++;pc=(long*)*sp++;   break;
+        case JSR:       *--sp=(long)(pc+1);pc=(long*)*(sp+*pc);  break;
+        case ADJ:       sp+=*pc++;                               break;
 
-        case ADD: printf("ADD\n");          ax = *sp++ +  ax;     break;
-        case SUB: printf("SUB\n");          ax = *sp++ -  ax;     break;
-        case MUL: printf("MUL\n");          ax = *sp++ *  ax;     break;
-        case DIV: printf("DIV\n");          ax = *sp++ /  ax;     break;
-        case MOD: printf("MOD\n");          ax = *sp++ %  ax;     break;
-        case AND: printf("AND\n");          ax = *sp++ &  ax;     break;
-        case OR: printf("OR\n");            ax = *sp++ |  ax;     break;
-        case EQ: printf("EQ\n");            ax = *sp++ == ax;     break;
-        case NE: printf("NE\n");            ax = *sp++ != ax;     break;
-        case LT: printf("LT\n");            ax = *sp++ <  ax;     break;
-        case GT: printf("GT\n");            ax = *sp++ >  ax;     break;
-        case LE: printf("LE\n");            ax = *sp++ <= ax;     break;
-        case GE: printf("GE\n");            ax = *sp++ >= ax;     break;
-        case SHL: printf("SHL\n");          ax = *sp++ << ax;     break;
-        case SHR: printf("SHR\n");          ax = *sp++ >> ax;     break;
-        case NOT: printf("NOT\n");          ax = !ax;             break;
-        case NEG: printf("NEG\n");          ax = -ax;             break;
-        case FINC: printf("FINC\n");        ax = ++(*(long*)ax);  break;
-        case FDEC: printf("FDEC\n");        ax = --(*(long*)ax);  break;
-        case BINC: printf("BINC\n");        ax = (*(long*)ax)++;  break;
-        case BDEC: printf("BDEC\n");        ax = (*(long*)ax)--;  break;
-
-        case BZ: printf("BZ %p\n", *pc);   if(!ax){pc=*pc;}else{pc++;}break;
-        case JMP: printf("JMP %p\n", *pc); pc = *pc;                  break;
-
-        case ENT: printf("ENT %ld\n", *pc); *--sp=bp;bp=sp;sp-=*pc++; break;
-        case LEV: printf("LEV\n");          sp=bp;bp=*sp++;pc=*sp++;  break;
-        case JSR: printf("JSR %ld\n", *pc); *--sp=pc+1;pc=*(sp+*pc);  break;
-        case ADJ: printf("ADJ %ld\n", *pc); sp+=*pc++;                break;
-
-        case _EXIT: printf("_EXIT\n");       running = 0;             break;
-        case _PUTCHAR: printf("_PUTCHAR\n"); putchar(ax);             break;
-        default: printf("unknown opcode: %p\n", *(pc-1));             break;
+        case _EXIT:     running = 0;                             break;
+        case _PUTCHAR:  putchar(ax);                             break;
+        default: printf("%p: unknown opcode: %p\n", pc-1, (long*)*(pc-1));
         }
     } 
 }
