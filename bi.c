@@ -29,6 +29,7 @@ long        val;
 long        *e, *end;
 long        *data;
 long        *id, *sym;
+char        *strtab;
 int         loc;
 
 int prefix(const char* s) {
@@ -49,7 +50,7 @@ enum {
     Assign, Cond, Or, And, Eq, Ne, Lt, Gt, Le, Ge,
     Shl, Shr, Add, Sub, Mul, Div, Mod, Inc, Dec, Brak,
     AddA, SubA, MulA, DivA, ModA, AndA, OrA, ShlA, ShrA,
-    _Putchar,
+    _Putchar, _Char,
 };
 
 enum { Name, Addr, IsAuto, HAddr, HIsAuto, Idsz };
@@ -58,7 +59,7 @@ enum {
     NOP = 0, IMM, LEA, LOAD, STO, PSH, ADD, SUB, MUL, DIV, MOD, AND, OR,
     EQ, NE, LT, GT, LE, GE, SHL, SHR, NOT, NEG, FINC, FDEC, BINC, BDEC,
     ADDA, SUBA, MULA, DIVA, MODA, ANDA, ORA, SHLA, SHRA,
-    BZ, JMP, ENT, LEV, JSR, ADJ, _PUTCHAR, _EXIT,
+    BZ, JMP, ENT, LEV, JSR, ADJ, _PUTCHAR, _CHAR, _EXIT,
 };
 
 void next() {
@@ -109,6 +110,7 @@ void next() {
             else if (idcmp("goto", pp)) { tk = Goto; return; }
             else if (idcmp("return", pp)) { tk = Return; return; }
             else if (idcmp("_putchar", pp)) { tk = _Putchar; return; }
+            else if (idcmp("_char", pp)) { tk = _Char; return; }
             tk = Id;
             for (id = sym; id[Name]; id += Idsz) {
                 if (idcmp((const char*)id[Name], pp)) { return; }
@@ -126,7 +128,7 @@ void next() {
         }
         else if (tk == '\'' || tk == '"') {
             p++;
-            const char* pp = (char*)data;
+            char* const pp = strtab;
             while (*p != 0 && *p != tk) {
                 if ((val = *p++) == '*') {
                     if (*p == '0') { val = '\0'; }
@@ -142,7 +144,7 @@ void next() {
                     if (*++p != '\'' && tk == '\'') { error("bad char literal"); }
                 }
                 if (*p != '\'' && tk == '\'') { error("bad char literal"); }
-                if (tk == '"') { *(*(char**)&data)++ = val; }
+                if (tk == '"') { *strtab++ = val; }
             }
             if (*p++ == 0) { error("unexpected EOF"); }
             if (tk == '"') { val = (long)pp; }
@@ -167,10 +169,7 @@ void expr(int lev) {
         *e++ = val;
         next();
         while (tk == '"') { next(); }
-        data = (long*)
-            ( (long)data 
-            +  sizeof(long) 
-            & -sizeof(long));
+        *strtab++ = 0;
     }
     else if (tk == Id) {
         if (!id[Addr]) { error("undefined identifier"); }
@@ -339,6 +338,7 @@ void stmt() {
                 *e++ = IMM;
                 *e++ = val;
                 *e++ = STO;
+                next();
             }
             if (tk == ',') { next(); }
         }
@@ -386,6 +386,13 @@ void stmt() {
         next();
         expr(Assign);
         *e++ = _PUTCHAR;
+        if (tk != ';') { error("';' expected"); }
+        next();
+    }
+    else if (tk == _Char) {
+        next();
+        expr(Assign);
+        *e++ = _CHAR;
         if (tk != ';') { error("';' expected"); }
         next();
     }
@@ -489,14 +496,16 @@ int main(int argc, char** argv) {
     buf[len] = 0;
     fclose(f);
 
-    e    = zalloc(10 * 1024 * sizeof(long));
-    data = zalloc(20 * 1024 * sizeof(long));
-    id   = zalloc(1024 * Idsz * sizeof(long));
+    e       = zalloc(10 * 1024 * sizeof(long));
+    data    = zalloc(20 * 1024 * sizeof(long));
+    strtab  = zalloc( 4 * 1024 * sizeof(long));
+    id      = zalloc(1024 * Idsz * sizeof(long));
 
     end  = e + 10 * 1024;
     sym  = id;
 
     compile("putchar(n) _putchar n;");
+    compile("char(s,i) _char s+i;");
     compile(buf);
 
     long* pc;
@@ -562,6 +571,7 @@ int main(int argc, char** argv) {
 
         case _EXIT:     running = 0;                             break;
         case _PUTCHAR:  putchar(ax);                             break;
+        case _CHAR:     ax = *(char*)ax;                         break;
         default: printf("%p: unknown opcode: %p\n", pc-1, (long*)*(pc-1));
         }
     } 
