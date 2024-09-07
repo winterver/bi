@@ -31,7 +31,7 @@ typedef struct node {
         N_ADDROF,
         N_DEREF,
         N_NEGATE,
-        N_PRE_NOT,
+        N_NOT,
         N_PRE_INC,
         N_PRE_DEC,
 
@@ -66,7 +66,6 @@ typedef struct node {
         N_AUTO,
         N_EXTRN,
         N_NAMECONST,
-        N_NAME,
 
         N_CASE,
         N_LABEL,
@@ -76,15 +75,12 @@ typedef struct node {
         N_RETURN,
         N_GOTO,
         N_RVALUE,
-        N_STMT,
+        N_BLOCK,
         N_PUTCHAR,
 
         N_VAR,
         N_ARRAY,
         N_FUNC,
-        N_IVAL_CONST,
-        N_IVAL_NAME,
-        N_DEFINITION,
     } type;
     struct node* next;
     union {
@@ -144,13 +140,15 @@ typedef struct node {
             struct node* body;
         } switch_;
         struct {
-            struct node* expr;
+            struct node* right;
         } return_;
         struct {
-            struct node* right;
+            char* t_name;
         } goto_;
         struct node* rvalue;
-        struct node* stmt;
+        struct {
+            struct node* stmts;
+        } block;
         struct {
             struct node* right;
         } _putchar;
@@ -165,14 +163,9 @@ typedef struct node {
         } array;
         struct {
             char* t_name;
-            struct node* const_;
-        } ival;
-        struct {
-            char* t_name;
             struct node* params;
             struct node* stmt;
         } func;
-        struct node* definition;
     };
 } node_t;
 
@@ -208,19 +201,33 @@ node_t* mknode(int type) {
 %type<ival> unaryop assign
 
 %%
-program: | definitions;
+program: { $$ = NULL; }
+       | definitions;
 
 definitions: definitions definition
+            {
+                $$ = $1;
+                node_t* n;
+                for (n = $$; n->next; n = n->next);
+                n->next = $2;
+            }
            | definition
            ;
 
 definition: NAME ';'
+            { $$ = mknode(N_VAR); $$->var.t_name = $1; }
           | NAME const ';'
+            { $$ = mknode(N_VAR); $$->var.t_name = $1; $$->var.const_ = $2;}
           | NAME '[' ']' ivals ';'
+            { $$ = mknode(N_ARRAY); $$->array.t_name = $1; $$->array.ivals = $4; }
           | NAME '[' const ']' ';'
+            { $$ = mknode(N_ARRAY); $$->array.t_name = $1; $$->array.const_ = $3; }
           | NAME '[' const ']' ivals ';'
+            { $$ = mknode(N_ARRAY); $$->array.t_name = $1; $$->array.const_ = $3; $$->array.ivals = $5; }
           | NAME '(' ')' statement
+            { $$ = mknode(N_FUNC); $$->func.t_name = $1; $$->func.stmt =$4;}
           | NAME '(' names ')' statement
+            { $$ = mknode(N_FUNC); $$->func.t_name = $1; $$->func.params=$3; $$->func.stmt =$5; }
           ;
 
 const: NUM { $$ = mknode(T_NUM); $$->t_num = $1; }
@@ -228,31 +235,58 @@ const: NUM { $$ = mknode(T_NUM); $$->t_num = $1; }
      ;
 
 ivals: ivals ',' ival
+        {
+            $$ = $1;
+            node_t* n;
+            for (n = $$; n->next; n = n->next);
+            n->next = $3;
+        }
      | ival
      ;
 
 ival: const
-    | NAME
+    | NAME { $$ = mknode(T_NAME); $$->t_name = $1; }
     ;
 
 names: names ',' NAME
-     | NAME
+        {
+            $$ = $1;
+            node_t* n;
+            for (n = $$; n->next; n = n->next);
+            n->next = mknode(T_NAME);
+            n->next->t_name = $3;
+        }
+     | NAME { $$ = mknode(T_NAME); $$->t_name = $1; }
      ;
 
 statement: AUTO nameconsts ';'
+            { $$ = mknode(N_AUTO); $$->auto_.nameconsts = $2; }
          | EXTRN names ';'
+            { $$ = mknode(N_EXTRN); $$->extrn.names = $2; }
          | CASE const ':'
+            { $$ = mknode(N_CASE); $$->case_.const_ = $2; }
          | NAME ':'
+            { $$ = mknode(N_LABEL); $$->label.t_name = $1; }
          | IF '(' rvalue ')' statement ELSE statement
+            { $$ = mknode(N_IF); $$->if_.cond = $3; $$->if_.body = $5; $$->if_.else_ = $7; }
          | IF '(' rvalue ')' statement
+            { $$ = mknode(N_IF); $$->if_.cond = $3; $$->if_.body = $5; }
          | WHILE '(' rvalue ')' statement
+            { $$ = mknode(N_WHILE); $$->while_.cond = $3; $$->while_.body = $5; }
          | SWITCH '(' rvalue ')' statement
+            { $$ = mknode(N_SWITCH); $$->switch_.cond = $3; $$->switch_.body = $5; }
          | RETURN rvalue ';'
+            { $$ = mknode(N_RETURN); $$->return_.right = $2; }
          | GOTO NAME ';'
+            { $$ = mknode(N_GOTO); $$->goto_.t_name = $2; }
          | rvalue ';'
+            { $$ = mknode(N_RVALUE); $$->rvalue = $1; }
          | '{' statements '}'
+            { $$ = mknode(N_BLOCK); $$->block.stmts = $2; }
          | '{' '}'
+            { $$ = mknode(N_EMPTY); }
          | _PUTCHAR rvalue ';'
+            { $$ = mknode(N_PUTCHAR); $$->_putchar.right = $2; }
          ;
 
 nameconsts: nameconsts ',' nameconst
