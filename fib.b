@@ -7,7 +7,12 @@ printn(n,b) {
     putchar(n%b + '0');
 }
 
+fib(n) {
+    if (n<3) return 1;
+    return fib(n-1)+fib(n-2);
+}
+
 main() {
-    printn(233);
+    printn(fib(34), 10);
     putchar('*n');
 }

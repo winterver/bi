@@ -405,7 +405,7 @@ void compile(const char* src) {
             *b = -loc;
             *e++ = LEV;
 
-            for (id = sym; id[Name]; id += Idsz) {
+            for (long* id = sym; id[Name]; id += Idsz) {
                 if (id[IsAuto]) {
                     id[Addr]   = id[HAddr];
                     id[IsAuto] = id[HIsAuto];
