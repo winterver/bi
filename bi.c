@@ -212,11 +212,12 @@ void expr(int lev) {
             next();
         }
         else if (tk == '(') {
+            next();
             if (*--e != LOAD) { error("bad lvalue in function call"); }
             *e++ = PSH;
-            next();
-            long* be = e;
+
             long* bend = end;
+            long* be = e;
             int t;
             for (t = 0; tk && tk != ')'; t++) {
                 expr(Assign);
@@ -229,14 +230,12 @@ void expr(int lev) {
 
                 if (tk == ',') { next(); }
             }
+            if (tk == 0) { error("unexpected EOF"); }
+            next();
             memcpy(e, end, (bend - end) * sizeof(long));
             e += bend - end;
             end = bend;
-            next();
-            //if (d->kind == Sys) { *e8++ = SYS; *e16++ = d->val; }
-            //else if (d->kind == Fun) { *e8++ = JSR; *e32++ = d->val; }
-            //else { error("bad function call"); }
-            //if (t) { *e++ = ADJ; *e++ = t; }
+
             *e++ = JSR; *e++ = t + 1; // num of arguments + 1 (a function
             *e++ = ADJ; *e++ = t + 1; // pointer is pushed before arguments)
         }
@@ -456,10 +455,8 @@ int main(int argc, char** argv) {
 
     free(sym);
 
+    /*
     for (long* op = le; *op; op++) {
-        //IMM, LEA, LOAD, STO, PSH, ADD, SUB, MUL, DIV, MOD, AND, OR,
-        //EQ, NE, LT, GT, LE, GE, SHL, SHR, NOT, NEG, FINC, FDEC, BINC, BDEC,
-        //BZ, JMP, ENT, LEV, JSR, _PUTCHAR,
         printf("%p: ", op);
         switch (*op) {
         case IMM: printf("IMM %p\n", *++op); break;
@@ -500,14 +497,12 @@ int main(int argc, char** argv) {
         }
     }
     printf("\n");
+    */
 
 #define printf(...)
 
     int running = 1;
     while (running) {
-        /*IMM, LEA, LOAD, STO, PSH, ADD, SUB, MUL, DIV, MOD, AND, OR,
-        EQ, NE, LT, GT, LE, GE, SHL, SHR, NOT, NEG, FINC, FDEC, BINC, BDEC,
-        BZ, JMP, ENT, LEV, JSR, _PUTCHAR,*/
         printf("%p: ", pc);
         switch (*pc++) {
         case IMM: printf("IMM %p\n", *pc);  ax = *pc++;           break;
