@@ -82,6 +82,7 @@ typedef struct node {
         N_ARRAY,
         N_FUNC,
     } type;
+    int lineno;
     struct node* next;
     union {
         char* t_name;
@@ -154,7 +155,7 @@ typedef struct node {
         } _putchar;
         struct {
             char* t_name;
-            struct node* const_;
+            struct node* ival;
         } var;
         struct {
             char* t_name;
@@ -169,12 +170,8 @@ typedef struct node {
     };
 } node_t;
 
-node_t* mknode(int type) {
-    node_t* n = malloc(sizeof(node_t));
-    memset(n, 0, sizeof(node_t));
-    n->type = type;
-    return n;
-}
+node_t* mknode(int type);
+node_t* root;
 
 %}
 
@@ -197,12 +194,12 @@ node_t* mknode(int type) {
 %type<node> const ivals ival names
 %type<node> statements statement nameconsts nameconst
 %type<node> rvalue cond or and equ rel shift
-%type<node> add mul post unary post args prime
+%type<node> add mul post unary args prime
 %type<ival> unaryop assign
 
 %%
-program: { $$ = NULL; }
-       | definitions;
+program: { root = NULL; }
+       | definitions  { root = $1; };
 
 definitions: definitions definition
             {
@@ -216,8 +213,8 @@ definitions: definitions definition
 
 definition: NAME ';'
             { $$ = mknode(N_VAR); $$->var.t_name = $1; }
-          | NAME const ';'
-            { $$ = mknode(N_VAR); $$->var.t_name = $1; $$->var.const_ = $2;}
+          | NAME ival ';'
+            { $$ = mknode(N_VAR); $$->var.t_name = $1; $$->var.ival = $2; }
           | NAME '[' ']' ivals ';'
             { $$ = mknode(N_ARRAY); $$->array.t_name = $1; $$->array.ivals = $4; }
           | NAME '[' const ']' ';'
@@ -284,6 +281,8 @@ statement: AUTO nameconsts ';'
          | '{' statements '}'
             { $$ = mknode(N_BLOCK); $$->block.stmts = $2; }
          | '{' '}'
+            { $$ = mknode(N_EMPTY); }
+         | ';'
             { $$ = mknode(N_EMPTY); }
          | _PUTCHAR rvalue ';'
             { $$ = mknode(N_PUTCHAR); $$->_putchar.right = $2; }
@@ -547,6 +546,155 @@ int YYLEX_DECL() {
     return YYEOF;
 }
 
+node_t* mknode(int type) {
+    node_t* n = malloc(sizeof(node_t));
+    memset(n, 0, sizeof(node_t));
+    n->lineno = yylloc.first_line;
+    n->type = type;
+    return n;
+}
+
+node_t* parse(char* buf) {
+    yylloc.first_line = 1;
+    p = buf;
+    yyparse();
+    return root;
+}
+
+#define error(...) { printf(__VA_ARGS__); putchar('\n'); exit(-1); }
+struct id { char* name; int64_t* addr; };
+struct id *globals, *extrns, *autos;
+struct id *pglobal, *pextrn, *pauto;
+int64_t *e, *le, *data, *ldata;
+
+struct id* find_global(char* name) {
+    for (struct id* p = globals; p < pglobal; p++) {
+        if (!strcmp(name, p->name)) { return p; }
+    }
+    return NULL;
+}
+
+void gen_var(node_t* def) {
+    struct id* var = pglobal++;
+    var->name = def->var.t_name;
+    var->addr = data++;
+
+    if (def->var.ival) {
+        node_t* ival = def->var.ival;
+        switch (ival->type) {
+        case T_NAME: {
+            struct id* p = find_global(ival->t_name);
+            if (!p) { error("(%d) undefined global", ival->lineno); }
+            *var->addr = (int64_t)p->addr;
+            break;
+        }
+        case T_NUM: *var->addr = ival->t_num; break;
+        case T_STR:
+            error("(%d) string initializer is not supported", ival->lineno);
+            break;
+        default: error("unknown ival"); break;
+        }
+    }
+}
+
+void gen_array(node_t* def) {
+    struct id* var = pglobal++;
+    var->name = def->array.t_name;
+    var->addr = data;
+
+    int const_size = 0;
+    if (def->array.const_) {
+        if (def->array.const_->type != T_NUM) {
+            error("array size must be a number");
+        }
+        const_size = def->array.const_->t_num;
+    }
+
+    int size = 0;
+    node_t* ival = def->array.ivals;
+    while (ival) {
+        switch(ival->type) {
+        case T_NAME: {
+            struct id* p = find_global(ival->t_name);
+            if (!p) { error("(%d) undefined global", ival->lineno); }
+            *data++ = (int64_t)p->addr;
+            break;
+        }
+        case T_NUM: *data++ = ival->t_num; break;
+        case T_STR:
+            error("(%d) string initializer is not supported", ival->lineno);
+            break;
+        default: error("unknown ival"); break;
+        }
+        ival = ival->next;
+        size++;
+    }
+    data = var->addr + (size > const_size ?
+                        size : const_size);
+}
+
+void gen_stmt(node_t* stmt) {
+    switch (stmt->type) {
+    case N_AUTO: break;
+    case N_EXTRN: break;
+    case N_CASE: break;
+    case N_LABEL: break;
+    case N_IF: break;
+    case N_WHILE: break;
+    case N_SWITCH: break;
+    case N_RETURN: break;
+    case N_GOTO: break;
+    case N_RVALUE: break;
+    case N_BLOCK: break;
+    case N_EMPTY: break;
+    case N_PUTCHAR: break;
+    default: error("unknown statement"); break;
+    }
+}
+
+void gen_func(node_t* def) {
+    printf("%s ", def->func.t_name);
+
+    putchar('(');
+    int size = 0;
+    node_t* param = def->func.params;
+    while (param) {
+        if (param->type != T_NAME) {
+            error("unknown param");
+        }
+        printf("%s", param->t_name);
+        if (param->next) { printf(", "); }
+        param = param->next;
+        size++;
+    }
+    putchar(')');
+
+    putchar('{');
+    gen_stmt(def->func.stmt);
+    putchar('}');
+    putchar('\n');
+}
+
+void* zero_alloc(size_t size) {
+    return memset(malloc(size), 0, size);
+}
+
+void gen_root(node_t* root) {
+    pglobal = globals   = zero_alloc(1024 * sizeof(struct id));
+    pextrn  = extrns    = zero_alloc(256 * sizeof(struct id));
+    pauto   = autos     = zero_alloc(256 * sizeof(struct id));
+    data    = ldata     = zero_alloc(20 * 1024 * sizeof(int64_t));
+    e       = le        = zero_alloc(10 * 1024 * sizeof(int64_t));
+    for (node_t* def = root; def; def = def->next) {
+        switch (def->type) {
+        case N_VAR: gen_var(def); break;
+        case N_ARRAY: gen_array(def); break;
+        case N_FUNC: gen_func(def); break;
+        default: error("unknown definition"); break;
+        }
+    }
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) { printf("usage: bi <source.b>\n"); return -1; }
     FILE* f = fopen(argv[1], "r");
@@ -561,7 +709,6 @@ int main(int argc, char** argv) {
     buf[len] = 0;
     fclose(f);
 
-    yylloc.first_line = 1;
-    p = buf;
-    yyparse();
+    node_t* root = parse(buf);
+    gen_root(root);
 }
