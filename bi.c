@@ -340,6 +340,17 @@ void stmt() {
                 *e++ = STO;
                 next();
             }
+            else if (tk == '"') {
+                *e++ = LEA;
+                *e++ = id[Addr];
+                *e++ = PSH;
+                *e++ = IMM;
+                *e++ = val;
+                *e++ = STO;
+                next();
+                while (tk == '"') { next(); }
+                *strtab++ = 0;
+            }
             if (tk == ',') { next(); }
         }
         if (tk == 0) { error("unexpected EOF"); }
@@ -425,6 +436,23 @@ void compile(const char* src) {
             if (tk != ';') { error("';' expected"); }
             next();
         }
+        else if (tk == Id) {
+            if (!id[Addr]) { error("undefined identifier\n"); }
+            d[Addr] = (long)data;
+            *data++ = id[Addr];
+            next();
+            if (tk != ';') { error("';' expected"); }
+            next();
+        }
+        else if (tk == '"') {
+            d[Addr] = (long)data;
+            *data++ = val;
+            next();
+            while (tk == '"') { next(); }
+            *strtab++ = 0;
+            if (tk != ';') { error("';' expected"); }
+            next();
+        }
         else if (tk == Brak) {
             next();
             int size = 0;
@@ -436,13 +464,22 @@ void compile(const char* src) {
             long* pp = data;
             d[Addr] = (long)data;
             for (i = 0; tk && tk != ';'; i++) {
-                if (tk == Num) { *pp++ = val; }
+                if (tk == Num) {
+                    *pp++ = val;
+                    next();
+                }
                 else if (tk == Id) {
                     if (!id[Addr]) { error("undefined identifier\n"); }
                     *pp++ = id[Addr];
+                    next();
                 }
-                else { error("bad initializer list"); }
-                next();
+                else if (tk == '"') {
+                    *pp++ = val;
+                    next();
+                    while (tk == '"') { next(); }
+                    *strtab++ = 0;
+                }
+                else { error("bad initializer"); }
                 if (tk == ',') { next(); }
             }
             if (tk == 0) { error("unexpected EOF"); }
@@ -513,6 +550,7 @@ int main(int argc, char** argv) {
     pc = (long*)id[Addr];
     if (!pc) { error("main() not defined"); }
     free(sym);
+    free(buf);
 
     long ax = 0, *sp, *bp;
     bp = sp = zalloc(1024 * sizeof(long));
@@ -561,6 +599,8 @@ int main(int argc, char** argv) {
         case NOT:       ax = !ax;                                break;
         case NEG:       ax = -ax;                                break;
                                                                  
+        // TODO: change to relative jumps, or ternary operators in
+        // function calls may cause severe errors.
         case JMP:       pc = (long*)*pc;                         break;
         case BZ:        pc = ax ? pc+1 : (long*)*pc;             break;
                         
