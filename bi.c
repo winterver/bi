@@ -44,9 +44,12 @@ int idcmp(const char* s1, const char* s2) {
 }
 
 enum {
-    Num = 128, Id, Extrn, Auto, If, Else, While, Switch, Case, Goto, Return,
-    Assign, Cond, Or, And, Eq, Ne, Lt, Gt, Le, Ge, Shl, Shr, Add, Sub, Mul,
-    Div, Mod, Inc, Dec, Brak, _Putchar,
+    Num = 128, Id, Extrn, Auto,
+    If, Else, While, Switch, Case, Goto, Return,
+    Assign, Cond, Or, And, Eq, Ne, Lt, Gt, Le, Ge,
+    Shl, Shr, Add, Sub, Mul, Div, Mod, Inc, Dec, Brak,
+    AddA, SubA, MulA, DivA, ModA, AndA, OrA, ShlA, ShrA,
+    _Putchar,
 };
 
 enum { Name, Addr, IsAuto, HAddr, HIsAuto, Idsz };
@@ -54,6 +57,7 @@ enum { Name, Addr, IsAuto, HAddr, HIsAuto, Idsz };
 enum {
     NOP = 0, IMM, LEA, LOAD, STO, PSH, ADD, SUB, MUL, DIV, MOD, AND, OR,
     EQ, NE, LT, GT, LE, GE, SHL, SHR, NOT, NEG, FINC, FDEC, BINC, BDEC,
+    ADDA, SUBA, MULA, DIVA, MODA, ANDA, ORA, SHLA, SHRA,
     BZ, JMP, ENT, LEV, JSR, ADJ, _PUTCHAR, _EXIT,
 };
 
@@ -62,6 +66,15 @@ void next() {
         if (strchr(" \t\r", *p)) { p++; }
         else if (strchr("\n", *p)) { p++; no++; }
         else if (prefix("/*")) { while (*p && !prefix("*/")) { no += *p++ == '\n'; } }
+        else if (prefix("=<<")) { tk = ShlA; return; }
+        else if (prefix("=>>")) { tk = ShrA; return; }
+        else if (prefix("=+")) { tk = AddA; return; }
+        else if (prefix("=-")) { tk = SubA; return; }
+        else if (prefix("=*")) { tk = MulA; return; }
+        else if (prefix("=/")) { tk = DivA; return; }
+        else if (prefix("=%")) { tk = ModA; return; }
+        else if (prefix("=&")) { tk = AndA; return; }
+        else if (prefix("=|")) { tk = OrA; return; }
         else if (prefix("<<")) { tk = Shl; return; }
         else if (prefix(">>")) { tk = Shr; return; }
         else if (prefix("<=")) { tk = Le; return; }
@@ -171,8 +184,53 @@ void expr(int lev) {
     while (tk >= lev || tk == '(') {
         if (tk == Assign) {
             next();
-            if (*--e != LOAD) { error("bad lvalue in decrement"); }
+            if (*--e != LOAD) { error("bad lvalue in assignment"); }
             *e++ = PSH; expr(Assign); *e++ = STO;
+        }
+        else if (tk == AddA) {
+            next();
+            if (*--e != LOAD) { error("bad lvalue in assignment"); }
+            *e++ = PSH; expr(Assign); *e++ = ADDA;
+        }
+        else if (tk == SubA) {
+            next();
+            if (*--e != LOAD) { error("bad lvalue in assignment"); }
+            *e++ = PSH; expr(Assign); *e++ = SUBA;
+        }
+        else if (tk == MulA) {
+            next();
+            if (*--e != LOAD) { error("bad lvalue in assignment"); }
+            *e++ = PSH; expr(Assign); *e++ = MULA;
+        }
+        else if (tk == DivA) {
+            next();
+            if (*--e != LOAD) { error("bad lvalue in assignment"); }
+            *e++ = PSH; expr(Assign); *e++ = DIVA;
+        }
+        else if (tk == ModA) {
+            next();
+            if (*--e != LOAD) { error("bad lvalue in assignment"); }
+            *e++ = PSH; expr(Assign); *e++ = MODA;
+        }
+        else if (tk == AndA) {
+            next();
+            if (*--e != LOAD) { error("bad lvalue in assignment"); }
+            *e++ = PSH; expr(Assign); *e++ = ANDA;
+        }
+        else if (tk == OrA) {
+            next();
+            if (*--e != LOAD) { error("bad lvalue in assignment"); }
+            *e++ = PSH; expr(Assign); *e++ = ORA;
+        }
+        else if (tk == ShlA) {
+            next();
+            if (*--e != LOAD) { error("bad lvalue in assignment"); }
+            *e++ = PSH; expr(Assign); *e++ = SHLA;
+        }
+        else if (tk == ShrA) {
+            next();
+            if (*--e != LOAD) { error("bad lvalue in assignment"); }
+            *e++ = PSH; expr(Assign); *e++ = SHRA;
         }
         else if (tk == Cond) {
             next();
@@ -470,14 +528,23 @@ int main(int argc, char** argv) {
         case MOD:       ax = *sp++ %  ax;                        break;
         case AND:       ax = *sp++ &  ax;                        break;
         case OR:        ax = *sp++ |  ax;                        break;
+        case SHL:       ax = *sp++ << ax;                        break;
+        case SHR:       ax = *sp++ >> ax;                        break;
         case EQ:        ax = *sp++ == ax;                        break;
         case NE:        ax = *sp++ != ax;                        break;
         case LT:        ax = *sp++ <  ax;                        break;
         case GT:        ax = *sp++ >  ax;                        break;
         case LE:        ax = *sp++ <= ax;                        break;
         case GE:        ax = *sp++ >= ax;                        break;
-        case SHL:       ax = *sp++ << ax;                        break;
-        case SHR:       ax = *sp++ >> ax;                        break;
+        case ADDA:      ax = *(long*)(*sp++) += ax;              break;
+        case SUBA:      ax = *(long*)(*sp++) -= ax;              break;
+        case MULA:      ax = *(long*)(*sp++) *= ax;              break;
+        case DIVA:      ax = *(long*)(*sp++) /= ax;              break;
+        case MODA:      ax = *(long*)(*sp++) %= ax;              break;
+        case ANDA:      ax = *(long*)(*sp++) &= ax;              break;
+        case ORA:       ax = *(long*)(*sp++) |= ax;              break;
+        case SHLA:      ax = *(long*)(*sp++)<<= ax;              break;
+        case SHRA:      ax = *(long*)(*sp++)>>= ax;              break;
         case FINC:      ax = ++(*(long*)ax);                     break;
         case FDEC:      ax = --(*(long*)ax);                     break;
         case BINC:      ax = (*(long*)ax)++;                     break;

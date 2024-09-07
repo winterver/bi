@@ -19,9 +19,9 @@ main() {
         a = n + 1;
         c = i = 0;
         while (i < n) {
-            c = c + v[i] * 10;
+            c =+ v[i] * 10;
             v[i++] = c % a;
-            c = c / a--;
+            c =/ a--;
         }
 
         putchar(c + '0');
