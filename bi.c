@@ -332,24 +332,10 @@ void stmt() {
             id[HIsAuto] = id[IsAuto]; id[IsAuto] = 1;
             next();
             if (tk == Num) {
-                *e++ = LEA;
-                *e++ = id[Addr];
-                *e++ = PSH;
-                *e++ = IMM;
-                *e++ = val;
-                *e++ = STO;
+                if (!val) { error("bad vector size"); }
+                loc -= val - 1;
+                id[Addr] = loc;
                 next();
-            }
-            else if (tk == '"') {
-                *e++ = LEA;
-                *e++ = id[Addr];
-                *e++ = PSH;
-                *e++ = IMM;
-                *e++ = val;
-                *e++ = STO;
-                next();
-                while (tk == '"') { next(); }
-                *strtab++ = 0;
             }
             if (tk == ',') { next(); }
         }

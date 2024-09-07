@@ -9,8 +9,9 @@ printn(n,b) {
 
 puts(s) {
     extrn putchar;
-    auto c, n 0;
+    auto c, n;
 
+    n = 0;
     while(c=char(s,n++))
         putchar(c);
     putchar('*n');
@@ -48,11 +49,25 @@ main() {
 }
 */
 
+/*
 main() {
-    auto b, a "233" "345" "456";
+    auto b, a;
+    a = "233" "345" "456";
     b = &a;
 
     printn(char(*b,1), 10);
     putchar('*n');
     puts(*b);
+}
+*/
+
+main() {
+    auto b, a 2;
+    a[0] = 2;
+    a[1] = 3;
+    a[2] = 3;
+    printn(a[0], 10);
+    printn(a[1], 10);
+    printn(b, 10);
+    putchar('*n');
 }
